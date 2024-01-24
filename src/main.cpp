@@ -1,47 +1,97 @@
-/**
- * @file display.ino
- * @author SeanKwok (shaoxiang@m5stack.com)
- * @brief M5StickCPlus2 Display Test
- * @version 0.1
- * @date 2023-12-09
- *
- *
- * @Hardwares: M5StickCPlus2
- * @Platform Version: Arduino M5Stack Board Manager v2.0.9
- * @Dependent Library:
- * M5GFX: https://github.com/m5stack/M5GFX
- * M5Unified: https://github.com/m5stack/M5Unified
- * M5StickCPlus2: https://github.com/m5stack/M5StickCPlus2
- */
+#include <M5StickCPlus2.h>
 
-#include "M5StickCPlus2.h"
+M5GFX display;
+M5Canvas backgroundCanvas;
+M5Canvas clockCanvas;
+M5Canvas menuCanvas;
+
+#define MENU_ITEMS 3
+
+char menuItems[MENU_ITEMS][10] = {"App1", "App2", "App3"};
+
+bool showMenu = false;
+bool redrawBackground = false;
+
+size_t previousSeconds = -1;
+size_t selected = 0;
+char timeString[20];
+
+#define BG_COLOR BLACK
+#define CLOCK_BG_COLOR BLACK
+#define CLOCK_COLOR ORANGE
+#define MENU_BG_COLOR BLACK
+#define MENU_ITEM_COLOR WHITE
+#define MENU_ITEM_SELECTED_COLOR YELLOW
+
+void drawMenuSprite();
+void drawClockSprite(m5::rtc_time_t time);
 
 void setup() {
+    M5.begin();
+    display.begin();
+    display.setRotation(1);
+    display.setBrightness(50);
 
-    auto cfg = M5.config();
-    StickCP2.begin(cfg);
-    StickCP2.Display.setRotation(1);
-    StickCP2.Display.setTextColor(GREEN);
-    StickCP2.Display.setTextDatum(middle_center);
-    StickCP2.Display.setFont(&fonts::DejaVu12);
-    StickCP2.Display.setTextSize(1);
+    clockCanvas.setTextSize(4);
+    clockCanvas.setTextDatum(MC_DATUM);
+    clockCanvas.setTextColor(CLOCK_COLOR);
+    clockCanvas.createSprite(display.width(), clockCanvas.fontHeight());
 
-    StickCP2.Lcd.setBrightness(50);
+    menuCanvas.setTextSize(3);
+    menuCanvas.createSprite(display.width(), display.height());
+    drawMenuSprite();
 }
 
-void loop(void) {
-    StickCP2.Speaker.end();
-    auto imu_update = StickCP2.Imu.update();
-    if (imu_update) {
-        auto data = StickCP2.Imu.getImuData();
+void loop() {
+    M5.update();
 
-        StickCP2.Speaker.tone(data.gyro.y * 100);
-
-        auto time = StickCP2.Rtc.getTime();
-
-        StickCP2.Display.setCursor(0, 40);
-        StickCP2.Display.clear();
-        StickCP2.Display.printf("%f", data.gyro.y);
+    if (M5.BtnB.wasClicked()) {
+        redrawBackground = true;
+        showMenu = !showMenu;
     }
-    delay(100);
+
+    // draw into sprites
+    if (showMenu) {
+        if (M5.BtnA.wasClicked()) {
+            selected = (selected + 1) % MENU_ITEMS;
+            drawMenuSprite();
+        }
+    } else {
+        auto time = M5.Rtc.getTime();
+        if (time.seconds != previousSeconds) {
+            drawClockSprite(time);
+        }
+    }
+
+    // composing display from sprites
+    display.startWrite();
+    if (redrawBackground) {
+        display.clear(BLACK);
+        redrawBackground = false;
+    }
+    if (showMenu) {
+        menuCanvas.pushSprite(&display, 0, 0);
+    } else {
+        clockCanvas.pushSprite(&display, 0, display.height() / 3);
+    }
+    display.endWrite();
+
+    delay(200);
+}
+
+void drawClockSprite(m5::rtc_time_t time) {
+    clockCanvas.fillSprite(CLOCK_BG_COLOR);
+    sprintf(timeString, "%02d:%02d:%02d", time.hours, time.minutes,
+            time.seconds);
+    clockCanvas.drawString(timeString, clockCanvas.width() / 2,
+                           clockCanvas.height() / 2);
+}
+
+void drawMenuSprite() {
+    menuCanvas.fillSprite(BLACK);
+    menuCanvas.setCursor(0, 0);
+    for (size_t i = 0; i < MENU_ITEMS; ++i) {
+        menuCanvas.setTextColor(i == selected ? YELLOW : WHITE);
+        menuCanvas.println(menuItems[i]);
+    }
 }
